@@ -63,7 +63,9 @@ uint8_t getSubKey(uint64_t *key, char direction, int round){
     if(direction == 'e'){ // rotate left for encryption
         *key = (*key << 1) | (*key >> 63);
     } else { // rotate right for decryption
+        retVal = (*key >> returnByte) & 0xFF;
         *key = (*key >> 1) | (*key << 63);
+        return retVal;
     }
     retVal = (*key >> returnByte) & 0xFF;
     return retVal;
@@ -79,7 +81,12 @@ int rotateBits(uint16_t *bitString, int bitLength, char direction){
 }
 
 uint8_t getFTableValue(uint8_t g){
-    return fTable[ (g >> 4) & 0xF][ g & 0xF ];
+    return fTable[ (g >> 4) & 0xF ][ g & 0xF ];
+}
+
+uint16_t concatinate(uint8_t k1, uint8_t k2){
+    uint16_t retVal = 0;
+    return ((retVal + k1) << 8) + k2;
 }
 
 int GFunction(uint16_t r, uint16_t *t, uint8_t k0, uint8_t k1, uint8_t k2, uint8_t k3, int round){
@@ -90,24 +97,38 @@ int GFunction(uint16_t r, uint16_t *t, uint8_t k0, uint8_t k1, uint8_t k2, uint8
     g4 = getFTableValue(g3^k1) ^ g2;
     g5 = getFTableValue(g4^k2) ^ g3;
     g6 = getFTableValue(g5^k3) ^ g4;
-    *t += g5;
+    // printf("g1 = %02x, g2 = %02x, g3 = %02x, g4 = %02x, g5 = %02x, g6 = %02x\n", g1,g2,g3,g4,g5,g6);
+    *t = *t + g5;
     *t = (*t << 8) + g6;
     return 0;
 }
 
-int Ffunction(uint16_t r0, uint16_t r1, uint16_t *f0, uint16_t *f1, uint64_t *key, int round){
+int Ffunction(uint16_t r0, uint16_t r1, uint16_t *f0, uint16_t *f1, uint64_t *key, int encrypt, int round){
     uint8_t subKey[12];
-    uint16_t t0, t1;
-    // logic needs to be added for decryption
-    for(int i=0; i<12; i++){
-        subKey[i] = getSubKey(key, 'e', 4*round+(i%4));
-        printf("0x%02X ", subKey[i]);
+    uint16_t t0 = 0;
+    uint16_t t1 = 0;
+    // if encrypt flag set, generate subkeys in forwards order
+    if(encrypt){
+        for(int i=0; i<12; i++){
+            subKey[i] = getSubKey(key, 'e', 4*round+(i%4));
+            // printf("0x%02X ", subKey[i]);
+        }
+    // if encrypt flag set to zero, generate subkeys in reverse order for decryption
+    } else {
+        for(int i=0; i<12; i++){
+            subKey[11-i] = getSubKey(key, 'd', 4*(15-round)+(3 - i%4));
+            // printf("0x%02X ", subKey[11-i]);
+        }
+        for(int j=0; j<12; j++){
+            // printf("0x%02X ", subKey[j]);
+        }
+        printf("\n");
     }
-    printf("\n");
     GFunction(r0, &t0, subKey[0], subKey[1], subKey[2], subKey[3], round);
     GFunction(r1, &t1, subKey[4], subKey[5], subKey[6], subKey[7], round);
-    *f0 = (t0 + 2*t1 + (subKey[8]  | subKey[9]))  % 2^16;
-    *f1 = (2*t0 + t1 + (subKey[10] | subKey[11])) % 2^16;
+    *f0 = (t0 + (t1<<1) + concatinate(subKey[8],  subKey[9]))  % (0xFFFF+1);
+    *f1 = ((t0<<1) + t1 + concatinate(subKey[10], subKey[11])) % (0xFFFF+1);
+    // printf("t0 = %02x, t1 = %02x f0 = %02x, f1 = %02x\n", t0, t1, *f0, *f1);
 
     return 0;
 }
@@ -116,7 +137,8 @@ int wsu_encrypt(uint64_t plainTextWord, uint64_t *cipherTextWord, uint64_t *key)
     uint16_t w0, w1, w2, w3;
     uint16_t k0, k1, k2, k3;
     uint16_t r0, r1, r2, r3, r2_prime, r3_prime;
-    uint16_t f0, f1;
+    uint16_t f0 = 0;
+    uint16_t f1 = 0;
     // printf("key: 0x%016llX\n", *key);
     // printf("0x%016llX\n", plainTextWord);
 
@@ -134,11 +156,12 @@ int wsu_encrypt(uint64_t plainTextWord, uint64_t *cipherTextWord, uint64_t *key)
     r2 = w2 ^ k2;
     r1 = w1 ^ k1;
     r0 = w0 ^ k0;
-    // printf("%02x %02x %02x %02x\n", r0,r1,r2,r3);
+    // printf("After whitening %02x %02x %02x %02x\n", r0,r1,r2,r3);
 
     int round = 0;
     while(round < 16){
-        Ffunction(r0, r1, &f0, &f1, key, round);
+        Ffunction(r0, r1, &f0, &f1, key, 1, round);
+        // printf("f0 = %02x, f1 = %02x\n", f0, f1);
         r2_prime = r2 ^ f0;
         rotateBits(&r2_prime, 16, 'r');
         rotateBits(&r3, 16, 'l');
@@ -147,19 +170,21 @@ int wsu_encrypt(uint64_t plainTextWord, uint64_t *cipherTextWord, uint64_t *key)
         r3 = r1;
         r0 = r2_prime;
         r1 = r3_prime;
+        // printf("After round(%d) %02x %02x %02x %02x\n", round,r0,r1,r2,r3);
         round++;
     }
+
     *cipherTextWord = *cipherTextWord + r2;
     *cipherTextWord = (*cipherTextWord << 16) + r3;
-    *cipherTextWord = (*cipherTextWord << 32) + r0;
-    *cipherTextWord = (*cipherTextWord << 48) + r1;
+    *cipherTextWord = (*cipherTextWord << 16) + r0;
+    *cipherTextWord = (*cipherTextWord << 16) + r1;
     *cipherTextWord ^= *key;
-    // output hex to file
-    // unwhitening step
+
+    // printf("After whitening %016llx\n", *cipherTextWord);
     return 0;
 }
 
-int wsu_decrypt(uint64_t cipherTextWord, uint64_t *plainTextWord){
+int wsu_decrypt(uint64_t cipherTextWord, uint64_t *plainTextWord, uint64_t *key){
     return 0;
 }
 
@@ -191,11 +216,21 @@ int main(int argc, char const *argv[]) {
     }
     close(keyFile_d);
 
-    uint64_t plainTextWord;
-    uint64_t cipherTextWord;
-    while( (bytesRead = read(inputFile_d, &plainTextWord, 8)) != 0 ){
-        wsu_encrypt(plainTextWord, &cipherTextWord, &key);
-        dprintf(outputFile_d, "0x%016llX", cipherTextWord); // output ciphertext to output file
+    unsigned char ptBuf;
+    int counter = 0;
+    uint64_t plainTextWord = 0;
+    uint64_t cipherTextWord = 0;
+
+    while( (bytesRead = read(inputFile_d, &ptBuf, 1)) != 0 ){
+        plainTextWord = (plainTextWord << 4) + convertToHex(ptBuf);
+        if(((counter + 1) % 16) == 0){
+            wsu_encrypt(plainTextWord, &cipherTextWord, &key);
+            plainTextWord = 0;
+            dprintf(outputFile_d, "%016llx", cipherTextWord); // output ciphertext to output file
+        }
+        counter++;
+        // printInBinary(plainTextWord, 64);
+        // printf("%016llX\n", plainTextWord);
     }
 
     close(inputFile_d);
