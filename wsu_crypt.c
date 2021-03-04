@@ -57,10 +57,10 @@ int convertToHex(char c){
 }
 
 //rotates value specified by <key> 1 bit. method will shift left if 'e' is passed in <flag> and right if anything else is
-uint8_t rotateKey(uint64_t *key, char flag, int round){
+uint8_t getSubKey(uint64_t *key, char direction, int round){
     uint8_t retVal;
     int returnByte = (round % 8) * 8;
-    if(flag == 'e'){ // rotate left for encryption
+    if(direction == 'e'){ // rotate left for encryption
         *key = (*key << 1) | (*key >> 63);
     } else { // rotate right for decryption
         *key = (*key >> 1) | (*key << 63);
@@ -69,11 +69,45 @@ uint8_t rotateKey(uint64_t *key, char flag, int round){
     return retVal;
 }
 
-int GFunction(){
+int rotateBits(uint16_t *bitString, int bitLength, char direction){
+    if(direction == 'l'){ // rotate left
+        *bitString = (*bitString << 1) | (*bitString >> (bitLength - 1));
+    } else { // rotate right
+        *bitString = (*bitString >> 1) | (*bitString << (bitLength - 1));
+    }
     return 0;
 }
 
-int Ffunction(){
+uint8_t getFTableValue(uint8_t g){
+    return fTable[ (g >> 4) & 0xF][ g & 0xF ];
+}
+
+int GFunction(uint16_t r, uint16_t *t, uint8_t k0, uint8_t k1, uint8_t k2, uint8_t k3, int round){
+    uint8_t g1, g2, g3, g4, g5, g6;
+    g2 = r & 0xFF;
+    g1 = (r >> 8) & 0xFF;
+    g3 = getFTableValue(g2^k0) ^ g1;
+    g4 = getFTableValue(g3^k1) ^ g2;
+    g5 = getFTableValue(g4^k2) ^ g3;
+    g6 = getFTableValue(g5^k3) ^ g4;
+    *t += g5;
+    *t = (*t << 8) + g6;
+    return 0;
+}
+
+int Ffunction(uint16_t r0, uint16_t r1, uint16_t *f0, uint16_t *f1, uint64_t *key, int round){
+    uint8_t subKey[12];
+    uint16_t t0, t1;
+    // logic needs to be added for decryption
+    for(int i=0; i<12; i++){
+        subKey[i] = getSubKey(key, 'e', 4*round+(i%4));
+        printf("0x%02X ", subKey[i]);
+    }
+    printf("\n");
+    GFunction(r0, &t0, subKey[0], subKey[1], subKey[2], subKey[3], round);
+    GFunction(r1, &t1, subKey[4], subKey[5], subKey[6], subKey[7], round);
+    *f0 = (t0 + 2*t1 + (subKey[8]  | subKey[9]))  % 2^16;
+    *f1 = (2*t0 + t1 + (subKey[10] | subKey[11])) % 2^16;
 
     return 0;
 }
@@ -81,9 +115,8 @@ int Ffunction(){
 int wsu_encrypt(uint64_t plainTextWord, uint64_t *cipherTextWord, uint64_t *key){
     uint16_t w0, w1, w2, w3;
     uint16_t k0, k1, k2, k3;
-    uint16_t r0, r1, r2, r3;
-    int round = 0;
-    // uint16_t bitMask = (~1) + 1; // max 16 bit int
+    uint16_t r0, r1, r2, r3, r2_prime, r3_prime;
+    uint16_t f0, f1;
     // printf("key: 0x%016llX\n", *key);
     // printf("0x%016llX\n", plainTextWord);
 
@@ -101,12 +134,28 @@ int wsu_encrypt(uint64_t plainTextWord, uint64_t *cipherTextWord, uint64_t *key)
     r2 = w2 ^ k2;
     r1 = w1 ^ k1;
     r0 = w0 ^ k0;
+    // printf("%02x %02x %02x %02x\n", r0,r1,r2,r3);
 
-    // printInBinary(plainTextWord ^ *key, 64);
-    printf("%02x %02x %02x %02x\n", r0,r1,r2,r3);
-    // Ffunction(r0, r1, round);
-
-
+    int round = 0;
+    while(round < 16){
+        Ffunction(r0, r1, &f0, &f1, key, round);
+        r2_prime = r2 ^ f0;
+        rotateBits(&r2_prime, 16, 'r');
+        rotateBits(&r3, 16, 'l');
+        r3_prime = r3 ^ f1;
+        r2 = r0;
+        r3 = r1;
+        r0 = r2_prime;
+        r1 = r3_prime;
+        round++;
+    }
+    *cipherTextWord = *cipherTextWord + r2;
+    *cipherTextWord = (*cipherTextWord << 16) + r3;
+    *cipherTextWord = (*cipherTextWord << 32) + r0;
+    *cipherTextWord = (*cipherTextWord << 48) + r1;
+    *cipherTextWord ^= *key;
+    // output hex to file
+    // unwhitening step
     return 0;
 }
 
@@ -123,12 +172,12 @@ int main(int argc, char const *argv[]) {
     if(access(argv[1], R_OK) != 0){ perror("plaintext file error"); exit(1); }
     if(access(argv[2], R_OK) != 0){ perror("key file error"); exit(1); }
 
-    int inputFile = open(argv[1], O_RDONLY);
-    if(!inputFile){ perror(""); exit(1); } // if error in opening file, print error and exit
-    int keyFile = open(argv[2], O_RDONLY);
-    if(!keyFile){ perror(""); exit(1); }
-    // int outputFile = open("ciphertext.txt", (O_WRONLY | O_CREAT));
-    // if(!inputFile){ perror(""); exit(1); }
+    int inputFile_d = open(argv[1], O_RDONLY);
+    if(!inputFile_d){ perror(""); exit(1); } // if error in opening file, print error and exit
+    int keyFile_d = open(argv[2], O_RDONLY);
+    if(!keyFile_d){ perror(""); exit(1); }
+    int outputFile_d = open("ciphertext.txt", (O_WRONLY | O_CREAT));
+    if(!outputFile_d){ perror(""); exit(1); }
 
     int bytesRead, hexVal;
     unsigned char keyBuf;
@@ -136,19 +185,21 @@ int main(int argc, char const *argv[]) {
     uint8_t subKey;
 
     // read in key from file and convert to hex
-    while( (bytesRead = read(keyFile, &keyBuf, 1)) != 0 ){
+    while( (bytesRead = read(keyFile_d, &keyBuf, 1)) != 0 ){
         hexVal = convertToHex(keyBuf);
         key = (key << 4) + hexVal;
     }
+    close(keyFile_d);
 
     uint64_t plainTextWord;
     uint64_t cipherTextWord;
-    while( (bytesRead = read(inputFile, &plainTextWord, 8)) != 0 ){
-        // printInBinary(plainTextWord, bytesRead*8);
-        // write(1, &plainTextWord, bytesRead);
+    while( (bytesRead = read(inputFile_d, &plainTextWord, 8)) != 0 ){
         wsu_encrypt(plainTextWord, &cipherTextWord, &key);
+        dprintf(outputFile_d, "0x%016llX", cipherTextWord); // output ciphertext to output file
     }
 
+    close(inputFile_d);
+    close(outputFile_d);
     return 0;
 }
 
