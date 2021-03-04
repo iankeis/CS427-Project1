@@ -185,6 +185,53 @@ int wsu_encrypt(uint64_t plainTextWord, uint64_t *cipherTextWord, uint64_t *key)
 }
 
 int wsu_decrypt(uint64_t cipherTextWord, uint64_t *plainTextWord, uint64_t *key){
+    uint16_t w0, w1, w2, w3;
+    uint16_t k0, k1, k2, k3;
+    uint16_t r0, r1, r2, r3, r2_prime, r3_prime;
+    uint16_t f0 = 0;
+    uint16_t f1 = 0;
+    // printf("key: 0x%016llX\n", *key);
+    // printf("0x%016llX\n", plainTextWord);
+
+    w3 = cipherTextWord & 0xFFFF;
+    w2 = (cipherTextWord >>= 16) & 0xFFFF;
+    w1 = (cipherTextWord >>= 16) & 0xFFFF;
+    w0 = (cipherTextWord >>= 16) & 0xFFFF;
+
+    k3 = *key & 0xFFFF;
+    k2 = (*key >> 16) & 0xFFFF;
+    k1 = (*key >> 32) & 0xFFFF;
+    k0 = (*key >> 48) & 0xFFFF;
+
+    r3 = w3 ^ k3;
+    r2 = w2 ^ k2;
+    r1 = w1 ^ k1;
+    r0 = w0 ^ k0;
+    // printf("After whitening %02x %02x %02x %02x\n", r0,r1,r2,r3);
+
+    int round = 0;
+    while(round < 16){
+        Ffunction(r0, r1, &f0, &f1, key, 0, round);
+        // printf("f0 = %02x, f1 = %02x\n", f0, f1);
+        rotateBits(&r2, 16, 'l');
+        r2_prime = r2 ^ f0;
+        r3_prime = r3 ^ f1;
+        rotateBits(&r3_prime, 16, 'r');
+        r2 = r0;
+        r3 = r1;
+        r0 = r2_prime;
+        r1 = r3_prime;
+        // printf("After round(%d) %02x %02x %02x %02x\n", round,r0,r1,r2,r3);
+        round++;
+    }
+
+    *plainTextWord = *plainTextWord + r2;
+    *plainTextWord = (*plainTextWord << 16) + r3;
+    *plainTextWord = (*plainTextWord << 16) + r0;
+    *plainTextWord = (*plainTextWord << 16) + r1;
+    *plainTextWord ^= *key;
+
+    // printf("After whitening %016llx\n", *cipherTextWord);
     return 0;
 }
 
@@ -221,16 +268,26 @@ int main(int argc, char const *argv[]) {
     uint64_t plainTextWord = 0;
     uint64_t cipherTextWord = 0;
 
+    int doEncryption = 0;
+
     while( (bytesRead = read(inputFile_d, &ptBuf, 1)) != 0 ){
-        plainTextWord = (plainTextWord << 4) + convertToHex(ptBuf);
-        if(((counter + 1) % 16) == 0){
-            wsu_encrypt(plainTextWord, &cipherTextWord, &key);
-            plainTextWord = 0;
-            dprintf(outputFile_d, "%016llx", cipherTextWord); // output ciphertext to output file
+        if(doEncryption){
+            plainTextWord = (plainTextWord << 4) + convertToHex(ptBuf);
+            if(((counter + 1) % 16) == 0){
+                wsu_encrypt(plainTextWord, &cipherTextWord, &key);
+                plainTextWord = 0;
+                dprintf(outputFile_d, "%016llx", cipherTextWord); // output ciphertext to output file
+            }
+            counter++;
+        } else {
+            cipherTextWord = (cipherTextWord << 4) + convertToHex(ptBuf);
+            if(((counter + 1) % 16) == 0){
+                wsu_decrypt(cipherTextWord, &plainTextWord, &key);
+                cipherTextWord = 0;
+                dprintf(outputFile_d, "%016llx", plainTextWord); // output plaintext to output file
+            }
+            counter++;
         }
-        counter++;
-        // printInBinary(plainTextWord, 64);
-        // printf("%016llX\n", plainTextWord);
     }
 
     close(inputFile_d);
