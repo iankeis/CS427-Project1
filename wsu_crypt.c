@@ -43,6 +43,11 @@ void printInBinary(uint64_t n, int bitLength){
     return;
 }
 
+void usage(){
+    printf("Usage: ./wsu_crypt [-e encrypt | -d decrypt] [-k key] [-i inputfile] [-o outputfile]\n");
+    exit(EXIT_FAILURE);
+}
+
 //converts a single char into a hex value
 int convertToHex(char c){
     int retVal = 0;
@@ -56,7 +61,7 @@ int convertToHex(char c){
     return retVal;
 }
 
-//rotates value specified by <key> 1 bit. method will shift left if 'e' is passed in <flag> and right if anything else is
+//rotates value specified by <key> 1 bit. method will shift left if 'e' is passed in <direction> and right if anything else is
 uint8_t getSubKey(uint64_t *key, char direction, int round){
     uint8_t retVal;
     int returnByte = (round % 8) * 8;
@@ -71,6 +76,7 @@ uint8_t getSubKey(uint64_t *key, char direction, int round){
     return retVal;
 }
 
+// rotates the bit string specified by <bitString> 1 bit in the direction specified by <direction>
 int rotateBits(uint16_t *bitString, int bitLength, char direction){
     if(direction == 'l'){ // rotate left
         *bitString = (*bitString << 1) | (*bitString >> (bitLength - 1));
@@ -80,10 +86,12 @@ int rotateBits(uint16_t *bitString, int bitLength, char direction){
     return 0;
 }
 
+// returns a value from the fTable using the high order 4 bits of <g> for the row, and low order 4 bits for the column
 uint8_t getFTableValue(uint8_t g){
     return fTable[ (g >> 4) & 0xF ][ g & 0xF ];
 }
 
+// returns a 16 bit concatination of <k1> and <k2>
 uint16_t concatinate(uint8_t k1, uint8_t k2){
     uint16_t retVal = 0;
     return ((retVal + k1) << 8) + k2;
@@ -111,18 +119,12 @@ int Ffunction(uint16_t r0, uint16_t r1, uint16_t *f0, uint16_t *f1, uint64_t *ke
     if(encrypt){
         for(int i=0; i<12; i++){
             subKey[i] = getSubKey(key, 'e', 4*round+(i%4));
-            // printf("0x%02X ", subKey[i]);
         }
     // if encrypt flag set to zero, generate subkeys in reverse order for decryption
     } else {
         for(int i=0; i<12; i++){
             subKey[11-i] = getSubKey(key, 'd', 4*(15-round)+(3 - i%4));
-            // printf("0x%02X ", subKey[11-i]);
         }
-        for(int j=0; j<12; j++){
-            // printf("0x%02X ", subKey[j]);
-        }
-        printf("\n");
     }
     GFunction(r0, &t0, subKey[0], subKey[1], subKey[2], subKey[3], round);
     GFunction(r1, &t1, subKey[4], subKey[5], subKey[6], subKey[7], round);
@@ -134,9 +136,10 @@ int Ffunction(uint16_t r0, uint16_t r1, uint16_t *f0, uint16_t *f1, uint64_t *ke
 }
 
 int wsu_encrypt(uint64_t plainTextWord, uint64_t *cipherTextWord, uint64_t *key){
-    uint16_t w0, w1, w2, w3;
-    uint16_t k0, k1, k2, k3;
+    uint16_t w0, w1, w2, w3; w0 = w1 = w2 = w3 = 0;
+    uint16_t k0, k1, k2, k3; k0 = k1 = k2 = k3 = 0;
     uint16_t r0, r1, r2, r3, r2_prime, r3_prime;
+    r0 = r1 = r2 = r3 = r2_prime = r3_prime = 0;
     uint16_t f0 = 0;
     uint16_t f1 = 0;
     // printf("key: 0x%016llX\n", *key);
@@ -175,12 +178,17 @@ int wsu_encrypt(uint64_t plainTextWord, uint64_t *cipherTextWord, uint64_t *key)
     }
 
     *cipherTextWord = *cipherTextWord + r2;
+    // printf("cipher %016llx\n", *cipherTextWord);
     *cipherTextWord = (*cipherTextWord << 16) + r3;
+    // printf("cipher %016llx\n", *cipherTextWord);
     *cipherTextWord = (*cipherTextWord << 16) + r0;
+    // printf("cipher %016llx\n", *cipherTextWord);
     *cipherTextWord = (*cipherTextWord << 16) + r1;
+    // printf("cipher %016llx\n", *cipherTextWord);
     *cipherTextWord ^= *key;
 
-    // printf("After whitening %016llx\n", *cipherTextWord);
+    // printf("cipher %016llx\n", *cipherTextWord);
+    // printf("key %016llx\n", *key);
     return 0;
 }
 
@@ -235,65 +243,124 @@ int wsu_decrypt(uint64_t cipherTextWord, uint64_t *plainTextWord, uint64_t *key)
     return 0;
 }
 
-int main(int argc, char const *argv[]) {
-    if(argc < 3){
-        printf("Usage: ./wsu_crypt <plaintextFile> <keyFile>\n");
-        exit(1);
+int main(int argc, char *argv[]) {
+    int inputFile_d, outputFile_d, keyFile_d;
+    int encrypt = 0;
+    int opt;
+
+    // get command line arguments
+    while ((opt = getopt(argc, argv, "edk:i:o:")) != -1) {
+        printf("opt %d\n", opt);
+        switch (opt) {
+        case 'e': encrypt = 1; break;
+        case 'd': encrypt = 0; break;
+        case 'k':
+            if(access(optarg, (F_OK | R_OK)) != 0){
+                printf("%s: %s\n", optarg, strerror(errno));
+                exit(EXIT_FAILURE);
+            } else {
+                keyFile_d = open(optarg, O_RDONLY);
+                if(!keyFile_d){
+                    printf("%s: %s\n", optarg, strerror(errno));
+                    exit(EXIT_FAILURE);
+                }
+            }
+            break;
+        case 'i':
+            if(access(optarg, (F_OK | R_OK)) != 0){
+                printf("%s: %s\n", optarg, strerror(errno));
+                exit(EXIT_FAILURE);
+            } else {
+                inputFile_d = open(optarg, O_RDONLY);
+                if(!inputFile_d){
+                    printf("%s: %s\n", optarg, strerror(errno));
+                    exit(EXIT_FAILURE);
+                }
+            }
+            break;
+        case 'o':
+            if(access(optarg, (F_OK | R_OK | W_OK)) == 0){
+                char response;
+                printf("Looks like %s already exists. Overwrite? [y/n]: ", optarg);
+                scanf("%s", &response);
+                if(response == 'y' || response == 'Y'){
+                    outputFile_d = open(optarg, (O_WRONLY | O_TRUNC));
+                    if(!outputFile_d){
+                        printf("%s: %s\n", optarg, strerror(errno));
+                        exit(EXIT_FAILURE);
+                    }
+                } else {
+                    printf("Process aborted\n");
+                    exit(EXIT_FAILURE);
+                }
+            } else {
+                outputFile_d = open(optarg, (O_WRONLY | O_CREAT));
+                if(!outputFile_d){
+                    printf("%s: %s\n", optarg, strerror(errno));
+                    exit(EXIT_FAILURE);
+                }
+            }
+            break;
+        case '?':
+            usage();
+        default:
+            usage();
+        }
     }
-    // checks that both plaintext file and key file exist and are readable
-    if(access(argv[1], R_OK) != 0){ perror("plaintext file error"); exit(1); }
-    if(access(argv[2], R_OK) != 0){ perror("key file error"); exit(1); }
 
-    int inputFile_d = open(argv[1], O_RDONLY);
-    if(!inputFile_d){ perror(""); exit(1); } // if error in opening file, print error and exit
-    int keyFile_d = open(argv[2], O_RDONLY);
-    if(!keyFile_d){ perror(""); exit(1); }
-    int outputFile_d = open("ciphertext.txt", (O_WRONLY | O_CREAT));
-    if(!outputFile_d){ perror(""); exit(1); }
+    if(!keyFile_d || !inputFile_d || !outputFile_d){ usage(); } //check again if files were opened
 
-    int bytesRead, hexVal;
+    int bytesRead;
     unsigned char keyBuf;
     uint64_t key = 0;
-    uint8_t subKey;
 
     // read in key from file and convert to hex
     while( (bytesRead = read(keyFile_d, &keyBuf, 1)) != 0 ){
-        hexVal = convertToHex(keyBuf);
-        key = (key << 4) + hexVal;
+        key = (key << 4) + convertToHex(keyBuf);
     }
     close(keyFile_d);
 
-    unsigned char ptBuf;
     int counter = 0;
+    unsigned char ctBuf;
     uint64_t plainTextWord = 0;
     uint64_t cipherTextWord = 0;
 
-    int doEncryption = 0;
-
-    while( (bytesRead = read(inputFile_d, &ptBuf, 1)) != 0 ){
-        if(doEncryption){
-            plainTextWord = (plainTextWord << 4) + convertToHex(ptBuf);
-            if(((counter + 1) % 16) == 0){
-                wsu_encrypt(plainTextWord, &cipherTextWord, &key);
-                plainTextWord = 0;
-                dprintf(outputFile_d, "%016llx", cipherTextWord); // output ciphertext to output file
+    if(encrypt){
+        printf("Encrypting...\n");
+        // while( (bytesRead = read(inputFile_d, &ctBuf, 1)) != 0 ){
+        while( (bytesRead = read(inputFile_d, &plainTextWord, 8)) != 0 ){
+            // plainTextWord = (plainTextWord << 4) + convertToHex(ctBuf);
+            if(bytesRead < 8 && bytesRead > 0){
+                printInBinary(plainTextWord, 64);
             }
-            counter++;
-        } else {
-            cipherTextWord = (cipherTextWord << 4) + convertToHex(ptBuf);
+            wsu_encrypt(plainTextWord, &cipherTextWord, &key);
+            // printInBinary(cipherTextWord, 64);
+            dprintf(outputFile_d, "%016llx", cipherTextWord);
+            plainTextWord = 0;
+            cipherTextWord = 0;
+        }
+    } else {
+        printf("Decrypting...\n");
+        while( (bytesRead = read(inputFile_d, &ctBuf, 1)) != 0 ){
+            cipherTextWord = (cipherTextWord << 4) + convertToHex(ctBuf);
             if(((counter + 1) % 16) == 0){
                 wsu_decrypt(cipherTextWord, &plainTextWord, &key);
+                // printInBinary(plainTextWord, 64);
+                // dprintf(outputFile_d, "%016llx", plainTextWord); // output plaintext to output file
+                for(int i=0; i<8; i++){
+                    if( ((plainTextWord >> 8*i) & 0xFF) > 0 ){
+                        dprintf(outputFile_d, "%c", (char)((plainTextWord >> 8*i) & 0xFF));
+                    } else {
+                        break;
+                    }
+                }
                 cipherTextWord = 0;
-                dprintf(outputFile_d, "%016llx", plainTextWord); // output plaintext to output file
+                plainTextWord = 0;
             }
             counter++;
         }
     }
-
     close(inputFile_d);
     close(outputFile_d);
     return 0;
 }
-
-
-// 0001 0011 1001 1110 0010 1011 0011 0100 0011 0101 1110 0010 1011 0011 0100 0101 0101 0111 0010 0110 0011 1100 0101 0110
