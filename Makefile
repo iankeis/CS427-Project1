@@ -16,7 +16,7 @@ ${EXEC}: ${OBJS}
 # 	        ./${EXEC}
 
 run: ${EXEC}
-	    ./${EXEC} plaintext.txt key.txt
+	    ./${EXEC}
 
 clean:
 	        rm -f ${EXEC} ${OBJS}
