@@ -250,7 +250,7 @@ int main(int argc, char *argv[]) {
 
     // get command line arguments
     while ((opt = getopt(argc, argv, "edk:i:o:")) != -1) {
-        printf("opt %d\n", opt);
+        // printf("opt %d\n", opt);
         switch (opt) {
         case 'e': encrypt = 1; break;
         case 'd': encrypt = 0; break;
@@ -322,6 +322,7 @@ int main(int argc, char *argv[]) {
 
     int counter = 0;
     unsigned char ctBuf;
+    uint64_t paddingBytes = 0;
     uint64_t plainTextWord = 0;
     uint64_t cipherTextWord = 0;
 
@@ -331,7 +332,14 @@ int main(int argc, char *argv[]) {
         while( (bytesRead = read(inputFile_d, &plainTextWord, 8)) != 0 ){
             // plainTextWord = (plainTextWord << 4) + convertToHex(ctBuf);
             if(bytesRead < 8 && bytesRead > 0){
-                printInBinary(plainTextWord, 64);
+                paddingBytes = 8 - bytesRead;
+                // printInBinary(plainTextWord, 64);
+                // printf("%llu padding byte(s) were added\n", paddingBytes);
+                plainTextWord += (paddingBytes << 56);
+                // printInBinary(plainTextWord, 64);
+                // printf("bytesRead %d\n", bytesRead);
+                // (plainTextWord <<= 8*(8-bytesRead));
+                // printInBinary(plainTextWord, 64);
             }
             wsu_encrypt(plainTextWord, &cipherTextWord, &key);
             // printInBinary(cipherTextWord, 64);
@@ -347,8 +355,13 @@ int main(int argc, char *argv[]) {
                 wsu_decrypt(cipherTextWord, &plainTextWord, &key);
                 // printInBinary(plainTextWord, 64);
                 // dprintf(outputFile_d, "%016llx", plainTextWord); // output plaintext to output file
-                for(int i=0; i<8; i++){
+                if( (plainTextWord >> 56) < 8 ){
+                    paddingBytes = plainTextWord >> 56;
+                    // printf("there are %llu padding bytes\n", paddingBytes);
+                }
+                for(int i=0; i<8-paddingBytes; i++){
                     if( ((plainTextWord >> 8*i) & 0xFF) > 0 ){
+                        // printInBinary(plainTextWord, 64);
                         dprintf(outputFile_d, "%c", (char)((plainTextWord >> 8*i) & 0xFF));
                     } else {
                         break;
