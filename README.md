@@ -12,8 +12,8 @@ Files included:
   Makefile - self explanitory
   
 To Run:
-  In the terminal, run:
-    
+
+    In the terminal, run:    
     $ make
     $ ./wsu_crypt -e -k key.txt -i plaintext.txt -o ciphertext.txt (encryption)   
     or
