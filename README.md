@@ -14,9 +14,10 @@ Files included:
 To Run:
   In the terminal, run:
     $ make
-    $ ./wsu_crypt -e -k key.txt -i plaintext.txt -o ciphertext.txt (encryption) 
-      
-      or
+
+    $ ./wsu_crypt -e -k key.txt -i plaintext.txt -o ciphertext.txt (encryption)   
+    
+    or
       
     $ ./wsu_crypt -d -k key.txt -i ciphertext.txt -o decrypted.txt (decryption)
 
