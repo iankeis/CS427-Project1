@@ -13,12 +13,10 @@ Files included:
   
 To Run:
   In the terminal, run:
-    $ make
-
-    $ ./wsu_crypt -e -k key.txt -i plaintext.txt -o ciphertext.txt (encryption)   
     
+    $ make
+    $ ./wsu_crypt -e -k key.txt -i plaintext.txt -o ciphertext.txt (encryption)   
     or
-      
     $ ./wsu_crypt -d -k key.txt -i ciphertext.txt -o decrypted.txt (decryption)
 
   Note: The command line options [-edkio] can be entered in any order but only -e or -d can be specified in a single command and not both
