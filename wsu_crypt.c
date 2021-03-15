@@ -27,25 +27,6 @@ uint8_t fTable[16][16] = {
     0x5e,0x6c,0xa9,0x13,0x57,0x25,0xb5,0xe3,0xbd,0xa8,0x3a,0x01,0x05,0x59,0x2a,0x46
 };
 
-// helper routine for testing that prints numbers in binary format
-void printInBinary(uint64_t n, int bitLength){
-    int bits[bitLength];
-    for(int i=bitLength-1; i>=0; i--){
-        if(n & 1){
-            bits[i] = 1;
-        } else {
-            bits[i] = 0;
-        }
-        n>>=1;
-    }
-    for(int j=0; j<bitLength; j++){
-        printf("%d", bits[j]);
-        if( (j+1)%4 == 0 ){ printf(" "); }
-    }
-    printf("\n");
-    return;
-}
-
 void usage(){
     printf("usage: ./wsu_crypt [-e encrypt | -d decrypt] [-k key] [-i inputfile] [-o outputfile]\n\n");
     exit(EXIT_FAILURE);
