@@ -1,6 +1,6 @@
 .SUFFIXES:.c.o
 CC = gcc
-CFLAGS = -std=c99 -g #-Wall -pedantic
+CFLAGS = -g #-std=c99 -Wall -pedantic
 EXEC = wsu_crypt
 OBJS = wsu_crypt.o #main.o
 
