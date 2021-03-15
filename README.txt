@@ -5,11 +5,16 @@ Created by Ian Kieswether
 
 Usage: ./wsu_crypt [-e encrypt | -d decrypt] [-k keyFile] [-i inputFile] [-o outputFile]
 
+Description:
+    wsu_crypt is a block-encryption algorithm based on Twofish by Bruce Schneier, John Kelsey, Doug Whiting, David Wagner,
+    Chris Hall and SKIPJACK by the NSA combined. This version is implemented using a 64 bit block size and a 64 bit key.
+    This version also uses ANSI X.923 byte padding.
+
 Files included:
-  wsu_crypt.c - This contains all the code for encryption and decryption.
-  key.txt - A text file containing a 64 bit key represented as a 16 character hexadecimal string.
-  plaintext.txt - An example plaintext file to test encryption
-  Makefile - self explanatory
+    wsu_crypt.c - This contains all the code for encryption and decryption.
+    key.txt - A text file containing a 64 bit key represented as a 16 character hexadecimal string.
+    plaintext.txt - An example plaintext file to test encryption
+    Makefile - self explanatory
 
 To Run:
 
